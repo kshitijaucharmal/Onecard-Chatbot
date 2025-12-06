@@ -1,0 +1,79 @@
+{
+  "Account Onboarding": {
+    "eligibility_criteria": "21-60 years, Indian citizen, minimum ₹25,000 monthly income, CIBIL score > 700",
+    "required_documents": "Aadhaar Card, PAN Card, 3 months bank statements, cancelled cheque, selfie with PAN",
+    "application_process": "Apply via app → Upload documents → Video KYC → Instant approval or 24hr verification",
+    "verification_timeline": "Video KYC: Instant | Document verification: 24 hours | Rejection notice within 48 hours",
+    "kyc_process": "Download app → Complete video KYC (2 mins) → Selfie verification → Account activated instantly",
+    "income_proof": "Salary slips (3 months), Form 16, or bank statements showing regular credits",
+    "rejection_reasons": "Low CIBIL (<700), insufficient income proof, incomplete documents, blacklisted in CIBIL"
+  },
+
+  "Card Delivery": {
+    "standard_delivery": "3-5 business days across India (metro: 2-3 days, Tier 2/3: 4-5 days)",
+    "delivery_tracking": "Track via app → Delivery → 'Track Card' | SMS updates on 1800-XXXX-XXXX",
+    "expedited_delivery": "₹499 extra → Next day delivery (metro only) | Request within 24hrs of order",
+    "change_address": "Update address in Profile → Delivery → Confirm OTP → New delivery in 2-3 days",
+    "card_arrival": "Card arrives in tamper-proof envelope. Activate via app/scratch PIN on back",
+    "pickup_option": "Available at 500+ partner stores (Reliance Retail, Croma). Show OTP + ID proof",
+    "delivery_failed": "Redeliver within 48hrs or convert to pickup. Contact support if >3 failed attempts"
+  },
+
+  "Transactions": {
+    "daily_limit": "₹2 Lakh domestic | ₹50K international | Custom limits in Profile → Limits",
+    "decline_reasons": "Insufficient limit | International transaction | Suspicious activity | Merchant category block",
+    "transaction_history": "App → Transactions → Filter by date/merchant/amount | Download CSV/PDF",
+    "dispute_process": "Transactions → Select txn → 'Report Issue' → Choose reason → Refund in 7-45 days",
+    "international_usage": "Enable in Profile → International → OTP verification for first use",
+    "contactless_limit": "₹5,000 per transaction without PIN | Above ₹5K needs PIN",
+    "merchant_refund": "Refunds credited within 7 days of merchant processing. Track in app"
+  },
+
+  "EMI": {
+    "eligible_amounts": "Purchases > ₹2,500 eligible for EMI conversion within 30 days",
+    "tenure_options": "3, 6, 9, 12, 18, 24 months | No processing fee",
+    "interest_rates": "14.99% - 16.99% p.a. (reducing balance) | Exact rate shown before conversion",
+    "emi_schedule": "View in App → EMI → Schedule | Prepay any installment without penalty",
+    "conversion_process": "Transactions → Select txn → 'Convert to EMI' → Choose tenure → Instant activation",
+    "prepayment": "Prepay any installment via App → EMI → Prepay | No charges",
+    "ineligible_txns": "Cash withdrawals, wallet loads, rent payments, government services not eligible"
+  },
+
+  "Bill Statements": {
+    "billing_cycle": "Generated 5th of every month | Due 15th of every month | Grace period till 20th",
+    "minimum_payment": "5% of total due or ₹500 (whichever higher) | Pay minimum → No late fee",
+    "bill_breakdown": "Principal + Interest + Fees + GST + Rewards cashback | Detailed view in app",
+    "statement_download": "App → Statements → Select month → PDF/CSV | Email delivery in 2 mins",
+    "due_date_reminder": "SMS/Email/Push 3 days before due date | Daily reminders if overdue",
+    "historical_statements": "Last 24 months available | Older statements via support request",
+    "partial_payment": "Pay any amount above minimum. Balance carries interest @3.5% pm"
+  },
+
+  "Repayments": {
+    "payment_methods": "UPI (Google Pay/PhonePe/Paytm), Netbanking, Debit Card, App wallet",
+    "upi_payments": "OneCardXXXXX@icici → Amount → Pay | Instant credit | No fees",
+    "autopay_setup": "Profile → Payments → Autopay → Link bank UPI/Netbanking → Daily/Weekly/Monthly",
+    "payment_confirmation": "SMS + App notification + Email | Transaction ID for reference",
+    "refund_credits": "Customer refunds credited within T+2 days | Track in Payment History",
+    "payment_schedule": "Pay before 11:59 PM due date → No late fee | After 8 PM → T+1 credit",
+    "multiple_payments": "Multiple partial payments allowed | Each reduces principal + interest"
+  },
+
+  "Collections": {
+    "overdue_stages": "1-7 days: Reminder SMS | 8-30 days: Calls + 36% p.a. interest | 30+ days: Legal notice",
+    "late_payment_fees": "₹500 (₹5K-10K bill) | ₹750 (₹10K-25K) | ₹1000 (>₹25K)",
+    "settlement_options": "One-time settlement: 50-70% of overdue | Eligibility after 90 days overdue",
+    "payment_plans": "3-12 months EMI on overdue amount | Interest @18% p.a. | Min ₹1000/month",
+    "cibil_impact": "30+ days overdue → Reported to CIBIL | Clears 45 days after full payment",
+    "legal_process": "90+ days → Legal notice → Recovery agency → Court if >₹25K unpaid",
+    "hardship_program": "Contact support → Submit income proof → Interest waiver + extended repayment"
+  },
+
+  "General": {
+    "customer_support": "App Chat (24x7) | Call 1800-XXXX-XXXX (9AM-9PM) | Email support@onecard.co",
+    "app_features": "Real-time tracking | Instant notifications | Card controls | Rewards dashboard",
+    "rewards_program": "1% cashback all spends | 5% on online shopping | 2% on groceries",
+    "card_controls": "App → Controls → Set limits | Block categories | Freeze card instantly",
+    "security_features": "3DSecure | Real-time alerts | Virtual card numbers | Instant block"
+  }
+}
