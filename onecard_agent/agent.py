@@ -1,12 +1,18 @@
-from google.adk.agents.llm_agent import Agent
+from google.adk.tools import AgentTool, FunctionTool, google_search
+from google.adk.agents import Agent
+from google.adk.runners import InMemoryRunner
+from google.genai import types
 
 import os
 import requests
 from typing import Optional
 
-# Correct Import for ADK v1.19+
-from google.adk.agents import Agent
-from google.adk.runners import InMemoryRunner
+retry_config = types.HttpRetryOptions(
+    attempts=5,  # Maximum retry attempts
+    exp_base=7,  # Delay multiplier
+    initial_delay=1,
+    http_status_codes=[429, 500, 503, 504],  # Retry on these HTTP errors
+)
 
 # --- Configuration ---
 # Ensure GOOGLE_API_KEY is set in your environment
@@ -137,7 +143,7 @@ CORE RULES:
 root_agent = Agent(
     name="OneCardBot",
     model="gemini-2.5-flash-lite",
-    instruction=system_prompt,  # <--- FIXED: Using 'instruction'
+    instruction=system_prompt,
     tools=[
         open_account,
         get_account_status,
@@ -147,5 +153,6 @@ root_agent = Agent(
         get_recent_transactions,
         convert_to_emi,
         check_collections_status
-    ]
+    ],
+    output_key="final_response",
 )
