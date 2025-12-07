@@ -7,27 +7,21 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
-# Import from the SQLite setup script
+# Import local DB setup
 from setup_database import Base, Customer, Transaction, Card, SessionLocal, engine
 
-# Create tables if they don't exist (safety check)
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(
-    title="OneCard GenAI Assistant APIs (SQLite)",
-    description="Mock APIs backed by a local SQLite database file.",
-    version="2.0.0"
-)
+app = FastAPI(title="OneCard Core Banking System", version="3.0")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# --- Dependency ---
+# --- Dependencies & Utilities ---
 
 
 def get_db():
@@ -37,189 +31,226 @@ def get_db():
     finally:
         db.close()
 
-# --- Pydantic Models ---
-
-
-class PaymentRequest(BaseModel):
-    amount: float = Field(..., gt=0)
-    method: str
+# --- Pydantic Request Models ---
 
 
 class AccountOpenRequest(BaseModel):
-    phone: str
     name: str
-
-# --- Endpoints ---
-
-
-@app.get("/", tags=["Health"])
-def health_check():
-    return {"status": "active", "db": "SQLite Local File"}
+    phone: str
 
 
-@app.post("/account/open", tags=["Account"], status_code=status.HTTP_201_CREATED)
+class PaymentRequest(BaseModel):
+    amount: float
+    method: str  # UPI, Netbanking
+
+
+class EMIRequest(BaseModel):
+    txn_id: str
+    tenure_months: int
+
+
+class DisputeRequest(BaseModel):
+    txn_id: str
+    reason: str
+
+
+class CardControlRequest(BaseModel):
+    action: str  # block, unblock, freeze
+
+# ==========================================
+# 1. ACCOUNT & ONBOARDING
+# ==========================================
+
+
+@app.post("/account/open", tags=["Account"])
 def open_account(req: AccountOpenRequest, db: Session = Depends(get_db)):
+    """Simulates new user onboarding."""
     if db.query(Customer).filter(Customer.phone == req.phone).first():
         raise HTTPException(
-            status_code=400, detail="Phone number already registered.")
+            status_code=400, detail="Phone already registered.")
 
     new_cust = Customer(
         id=f"cust_{str(uuid.uuid4())[:8]}",
         name=req.name,
         phone=req.phone,
-        status="pending_verification",
-        due_date=None
+        status="pending_kyc",
+        credit_limit=50000.0
     )
     db.add(new_cust)
     db.commit()
-    return {"customer_id": new_cust.id, "message": "Account created. Please complete KYC."}
+    return {"customer_id": new_cust.id, "message": "Account created. KYC Pending."}
 
 
-@app.get("/account/status/{customer_id}", tags=["Account"])
-def get_account_status(customer_id: str, db: Session = Depends(get_db)):
+@app.get("/account/details/{customer_id}", tags=["Account"])
+def get_account_details(customer_id: str, db: Session = Depends(get_db)):
+    """Fetch holistic account view including rewards."""
     cust = db.query(Customer).filter(Customer.id == customer_id).first()
     if not cust:
-        raise HTTPException(status_code=404, detail="Customer not found")
+        raise HTTPException(404, "Customer not found")
 
     return {
-        "customer_id": cust.id,
         "name": cust.name,
         "status": cust.status,
-        "balance_due": cust.balance_due
+        "credit_limit": cust.credit_limit,
+        "available_limit": cust.credit_limit - cust.balance_due,
+        "reward_points": cust.reward_points
     }
 
+# ==========================================
+# 2. CARD MANAGEMENT & DELIVERY
+# ==========================================
 
-@app.get("/card/status/{customer_id}", tags=["Card"])
-def get_card_status(customer_id: str, db: Session = Depends(get_db)):
+
+@app.get("/card/track/{customer_id}", tags=["Card"])
+def track_card(customer_id: str, db: Session = Depends(get_db)):
+    """Returns delivery status for physical kits."""
     card = db.query(Card).filter(Card.customer_id == customer_id).first()
     if not card:
-        raise HTTPException(
-            status_code=404, detail="No card found for this customer")
+        raise HTTPException(404, "No card found")
 
-    eta = (datetime.now() + timedelta(days=2)
-           ).strftime("%Y-%m-%d") if card.delivery_status == "in_transit" else "N/A"
-
+    eta = (datetime.now() + timedelta(days=3)).strftime("%Y-%m-%d")
     return {
-        "status": card.status,
-        "delivery_stage": card.delivery_status,
+        "card_number_mask": f"XXXX-XXXX-XXXX-{card.card_number[-4:]}",
+        "delivery_status": card.delivery_status,
         "tracking_id": card.tracking_id,
-        "eta": eta
+        "estimated_arrival": eta if card.delivery_status == "in_transit" else "N/A"
     }
 
 
-@app.get("/bill/{customer_id}", tags=["Billing"])
-def get_current_bill(customer_id: str, db: Session = Depends(get_db)):
-    cust = db.query(Customer).filter(Customer.id == customer_id).first()
-    if not cust:
-        raise HTTPException(status_code=404, detail="Customer not found")
+@app.post("/card/control/{customer_id}", tags=["Card"])
+def manage_card_security(customer_id: str, req: CardControlRequest, db: Session = Depends(get_db)):
+    """Handle locking/unlocking cards (Security)."""
+    card = db.query(Card).filter(Card.customer_id == customer_id).first()
+    if not card:
+        raise HTTPException(404, "Card not found")
 
-    is_overdue = False
-    if cust.due_date and cust.balance_due > 0:
-        # Convert date to string or compare date objects directly
-        if datetime.now().date() > cust.due_date:
-            is_overdue = True
+    if req.action == "block":
+        card.status = "blocked"
+        msg = "Card permanently blocked. Replacement initiated."
+    elif req.action == "freeze":
+        card.status = "frozen"
+        msg = "Card temporarily frozen."
+    elif req.action == "unblock":
+        card.status = "active"
+        msg = "Card active again."
+    else:
+        raise HTTPException(400, "Invalid action")
 
-    return {
-        "total_due": cust.balance_due,
-        "minimum_due": cust.min_due,
-        "due_date": cust.due_date,
-        "status": "overdue" if is_overdue else "unpaid"
-    }
-
-
-@app.post("/payment/initiate/{customer_id}", tags=["Payments"])
-def initiate_payment(customer_id: str, req: PaymentRequest, db: Session = Depends(get_db)):
-    cust = db.query(Customer).filter(Customer.id == customer_id).first()
-    if not cust:
-        raise HTTPException(status_code=404, detail="Customer not found")
-
-    if cust.balance_due <= 0:
-        return {"message": "No dues pending."}
-
-    cust.balance_due = max(0, cust.balance_due - req.amount)
-
-    payment_txn = Transaction(
-        id=f"PAY_{uuid.uuid4().hex[:8].upper()}",
-        customer_id=customer_id,
-        merchant="Credit Card Repayment",
-        amount=-req.amount,
-        category="Repayment",
-        date=datetime.now()
-    )
-    db.add(payment_txn)
     db.commit()
+    return {"status": "success", "new_card_status": card.status, "message": msg}
 
-    return {
-        "status": "success",
-        "new_balance": cust.balance_due,
-        "txn_id": payment_txn.id
-    }
-
-
-@app.get("/transactions/{customer_id}", tags=["Transactions"])
-def get_transactions(customer_id: str, limit: int = 5, db: Session = Depends(get_db)):
-    txns = db.query(Transaction)\
-             .filter(Transaction.customer_id == customer_id)\
-             .order_by(desc(Transaction.date))\
-             .limit(limit)\
-             .all()
-
-    return {"count": len(txns), "transactions": txns}
+# ==========================================
+# 3. BILLING & REPAYMENTS [cite: 10, 11]
+# ==========================================
 
 
-@app.get("/collections/status/{customer_id}", tags=["Collections"])
-def get_overdue_status(customer_id: str, db: Session = Depends(get_db)):
+@app.get("/bill/summary/{customer_id}", tags=["Billing"])
+def get_bill(customer_id: str, db: Session = Depends(get_db)):
     cust = db.query(Customer).filter(Customer.id == customer_id).first()
     if not cust:
-        raise HTTPException(status_code=404, detail="Customer not found")
+        raise HTTPException(404, "Customer not found")
 
-    is_critical = cust.balance_due > 5000
+    overdue = cust.due_date and cust.due_date < datetime.now().date()
 
     return {
         "total_outstanding": cust.balance_due,
-        "risk_category": "High" if is_critical else "Low",
-        "action_required": "Immediate Payment" if is_critical else "None"
+        "min_due": cust.min_due,
+        "due_date": str(cust.due_date),
+        "is_overdue": overdue,
+        "statement_period": "Nov 1 - Nov 30"
     }
 
-# --- Add this Pydantic Model near the top with others ---
+
+@app.post("/payment/pay/{customer_id}", tags=["Billing"])
+def make_payment(customer_id: str, req: PaymentRequest, db: Session = Depends(get_db)):
+    cust = db.query(Customer).filter(Customer.id == customer_id).first()
+    if not cust:
+        raise HTTPException(404, "Customer not found")
+
+    cust.balance_due = max(0, cust.balance_due - req.amount)
+    cust.min_due = max(0, cust.min_due - req.amount)
+
+    # Record the payment as a transaction
+    pay_txn = Transaction(
+        id=f"PAY_{uuid.uuid4().hex[:6].upper()}",
+        customer_id=customer_id,
+        merchant="OneCard Payment",
+        amount=req.amount,
+        category="Payment",
+        date=datetime.utcnow()
+    )
+    db.add(pay_txn)
+    db.commit()
+
+    return {"status": "success", "new_balance": cust.balance_due, "txn_ref": pay_txn.id}
+
+# ==========================================
+# 4. TRANSACTIONS & EMI [cite: 9]
+# ==========================================
 
 
-class EMIRequest(BaseModel):
-    txn_id: str
-    tenure_months: int = Field(..., ge=3, le=24,
-                               description="Tenure must be 3-24 months")
+@app.get("/transactions/list/{customer_id}", tags=["Transactions"])
+def list_transactions(customer_id: str, limit: int = 5, db: Session = Depends(get_db)):
+    txns = db.query(Transaction).filter(Transaction.customer_id == customer_id)\
+             .order_by(desc(Transaction.date)).limit(limit).all()
+    return {"count": len(txns), "transactions": txns}
 
-# --- Add this Endpoint near the bottom (before 'if __name__') ---
 
-
-@app.post("/emi/convert", tags=["EMI"])
-def convert_to_emi(req: EMIRequest, db: Session = Depends(get_db)):
-    # 1. Find the transaction
+@app.post("/transactions/convert_emi", tags=["Transactions"])
+def convert_emi(req: EMIRequest, db: Session = Depends(get_db)):
     txn = db.query(Transaction).filter(Transaction.id == req.txn_id).first()
     if not txn:
-        raise HTTPException(status_code=404, detail="Transaction not found")
+        raise HTTPException(404, "Transaction not found")
 
-    # 2. Mock Logic: Prevent converting small amounts
     if txn.amount < 2500:
-        raise HTTPException(
-            status_code=400, detail="Transaction too small for EMI (Min 2500).")
+        raise HTTPException(400, "Transaction too small for EMI (Min 2500).")
 
-    # 3. Calculate EMI (Mock 14% Interest)
-    interest_rate = 0.14
-    total_repayment = txn.amount * (1 + interest_rate)
-    monthly_installment = total_repayment / req.tenure_months
+    interest = 0.15  # 15% PA mock
+    total_pay = txn.amount * (1 + (interest * req.tenure_months/12))
+    monthly = total_pay / req.tenure_months
 
-    # 4. Update Transaction Category to indicate change
-    txn.category = f"Converted to EMI ({req.tenure_months}m)"
+    txn.is_emi = True
+    txn.category += " (Converted to EMI)"
     db.commit()
 
     return {
-        "status": "success",
-        "emi_id": f"EMI_{uuid.uuid4().hex[:6]}",
-        "original_txn": txn.id,
-        "monthly_installment": round(monthly_installment, 2),
-        "total_repayment": round(total_repayment, 2),
-        "message": f"Transaction converted. Your monthly EMI is {round(monthly_installment, 2)}."
+        "status": "converted",
+        "monthly_emi": round(monthly, 2),
+        "tenure": req.tenure_months,
+        "message": f"Converted to {req.tenure_months} months EMI."
+    }
+
+
+@app.post("/transactions/dispute", tags=["Transactions"])
+def report_dispute(req: DisputeRequest, db: Session = Depends(get_db)):
+    txn = db.query(Transaction).filter(Transaction.id == req.txn_id).first()
+    if not txn:
+        raise HTTPException(404, "Transaction not found")
+
+    txn.dispute_status = "open"
+    db.commit()
+    return {"ticket_id": f"TKT_{uuid.uuid4().hex[:6]}", "status": "investigation_started"}
+
+# ==========================================
+# 5. COLLECTIONS (For Overdue)
+# ==========================================
+
+
+@app.get("/collections/check/{customer_id}", tags=["Collections"])
+def check_collections_status(customer_id: str, db: Session = Depends(get_db)):
+    cust = db.query(Customer).filter(Customer.id == customer_id).first()
+    if not cust:
+        raise HTTPException(404, "Customer not found")
+
+    # Logic: High risk if overdue > 5000 AND date passed
+    is_overdue = cust.due_date and cust.due_date < datetime.now().date()
+    high_risk = is_overdue and cust.balance_due > 5000
+
+    return {
+        "risk_level": "CRITICAL" if high_risk else "NORMAL",
+        "agent_assigned": True if high_risk else False,
+        "settlement_offer_available": True if high_risk else False,
+        "message": "Please pay immediately to avoid legal action." if high_risk else "Account is in good standing."
     }
 
 

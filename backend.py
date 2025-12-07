@@ -1,228 +1,154 @@
-from fastapi.middleware.cors import CORSMiddleware  # <--- 1. Import this
 from google.genai import types, Client
-from google.adk.runners import InMemoryRunner
 from google.adk.agents import Agent
-from google.adk.tools import AgentTool, FunctionTool, google_search
-from google.adk.sessions import InMemorySessionService
 from google.adk.runners import Runner
-from typing import Optional
+from google.adk.sessions import InMemorySessionService
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 import requests
 import os
-import uvicorn
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-import asyncio
 import sys
-
+import asyncio
 from dotenv import load_dotenv
+
 load_dotenv()
 
-
-api_key = os.environ.get("GOOGLE_API_KEY")
-if not api_key:
-    print("❌ ERROR: GOOGLE_API_KEY is not set in environment variables.",
-          file=sys.stderr)
-try:
-    genai_client = Client(api_key=api_key)
-except Exception as e:
-    print(f"❌ ERROR: Could not initialize GenAI Client: {e}", file=sys.stderr)
-    sys.exit(1)
 # --- Configuration ---
 API_BASE_URL = "http://localhost:5000"
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 
-# --- 1. Tool Definitions ---
+if not GOOGLE_API_KEY:
+    print("❌ ERROR: GOOGLE_API_KEY missing.", file=sys.stderr)
+    sys.exit(1)
+
+# --- Tool Definitions (Connecting Agent to Mock API) ---
 
 
-def open_account(name: str, phone: str) -> dict:
-    """
-    Opens a new credit card account for a customer.
-    Use this when a user explicitly asks to 'sign up', 'register', or 'get a card'.
-
-    Args:
-        name: The full name of the customer.
-        phone: A valid 10-digit phone number.
-
-    Returns:
-        dict: Contains the new 'customer_id' which MUST be shown to the user.
-    """
+def open_account_tool(name: str, phone: str) -> dict:
+    """Opens a new credit card account for a user."""
     try:
-        response = requests.post(
-            f"{API_BASE_URL}/account/open", json={"name": name, "phone": phone})
-        return response.json()
-    except Exception as e:
-        return {"error": f"Connection failed: {str(e)}"}
-
-
-def get_account_status(customer_id: str) -> dict:
-    """
-    Retrieves the verification status (e.g., Verified, Pending) and balance overview.
-
-    Args:
-        customer_id: The unique string ID (e.g., 'cust_12345').
-    """
-    try:
-        response = requests.get(f"{API_BASE_URL}/account/status/{customer_id}")
-        if response.status_code == 404:
-            return {"error": "Customer ID not found."}
-        return response.json()
+        resp = requests.post(f"{API_BASE_URL}/account/open",
+                             json={"name": name, "phone": phone})
+        return resp.json()
     except Exception as e:
         return {"error": str(e)}
 
 
-def check_card_delivery(customer_id: str) -> dict:
-    """
-    Checks where the physical card is (e.g., In Transit, Delivered) and provides ETA.
-    Use this for queries like "Where is my card?" or "When will it arrive?".
-    """
+def get_account_details_tool(customer_id: str) -> dict:
+    """Gets balance, credit limit, and reward points."""
     try:
-        response = requests.get(f"{API_BASE_URL}/card/status/{customer_id}")
-        return response.json()
+        return requests.get(f"{API_BASE_URL}/account/details/{customer_id}").json()
     except Exception as e:
         return {"error": str(e)}
 
 
-def get_current_bill(customer_id: str) -> dict:
-    """
-    Fetches the current billing details including total amount due, minimum due, and due date.
-    """
+def track_card_tool(customer_id: str) -> dict:
+    """Checks physical card delivery status and ETA."""
     try:
-        response = requests.get(f"{API_BASE_URL}/bill/{customer_id}")
-        return response.json()
+        return requests.get(f"{API_BASE_URL}/card/track/{customer_id}").json()
     except Exception as e:
         return {"error": str(e)}
 
 
-def make_payment(customer_id: str, amount: float, method: str) -> dict:
+def block_freeze_card_tool(customer_id: str, action: str) -> dict:
     """
-    Initiates a bill payment. 
-
-    Args:
-        customer_id: The unique customer ID.
-        amount: The amount in INR to pay.
-        method: The payment mode. MUST be one of: 'UPI', 'Card', or 'Netbanking'.
+    Blocks or Freezes a card. 
+    Action must be 'block' (permanent) or 'freeze' (temporary).
     """
     try:
-        response = requests.post(
-            f"{API_BASE_URL}/payment/initiate/{customer_id}",
-            json={"amount": amount, "method": method}
-        )
-        return response.json()
+        return requests.post(f"{API_BASE_URL}/card/control/{customer_id}", json={"action": action}).json()
     except Exception as e:
         return {"error": str(e)}
 
 
-def get_recent_transactions(customer_id: str, limit: int = 5) -> dict:
-    """
-    Fetches the list of recent transactions.
-
-    Args:
-        customer_id: The unique customer ID.
-        limit: Number of transactions to return (default is 5).
-    """
+def get_bill_tool(customer_id: str) -> dict:
+    """Gets total outstanding, minimum due, and due date."""
     try:
-        response = requests.get(
-            f"{API_BASE_URL}/transactions/{customer_id}", params={"limit": limit})
-        return response.json()
+        return requests.get(f"{API_BASE_URL}/bill/summary/{customer_id}").json()
     except Exception as e:
         return {"error": str(e)}
 
 
-def convert_to_emi(txn_id: str, tenure_months: int) -> dict:
-    """
-    Converts a specific transaction into EMI installments.
-
-    Args:
-        txn_id: The ID of the transaction to convert (e.g., 'txn_abc123').
-        tenure_months: Duration in months. MUST be between 3 and 24.
-    """
+def make_payment_tool(customer_id: str, amount: float) -> dict:
+    """Pays the credit card bill. Method defaults to 'UPI' internally."""
     try:
-        response = requests.post(
-            f"{API_BASE_URL}/emi/convert",
-            json={"txn_id": txn_id, "tenure_months": tenure_months}
-        )
-        if response.status_code == 400:
-            return {"error": "Invalid request. Transaction might be too small or tenure invalid."}
-        return response.json()
+        return requests.post(f"{API_BASE_URL}/payment/pay/{customer_id}", json={"amount": amount, "method": "UPI"}).json()
     except Exception as e:
         return {"error": str(e)}
 
 
-def check_collections_status(customer_id: str) -> dict:
-    """
-    Checks if the customer is in a high-risk category due to overdue payments.
-    Use this if the customer mentions 'collections agent' or 'harassment'.
-    """
+def get_transactions_tool(customer_id: str) -> dict:
+    """Fetches recent 5 transactions."""
     try:
-        response = requests.get(
-            f"{API_BASE_URL}/collections/status/{customer_id}")
-        return response.json()
+        return requests.get(f"{API_BASE_URL}/transactions/list/{customer_id}").json()
     except Exception as e:
         return {"error": str(e)}
 
-# --- 2. System Instruction ---
+
+def convert_emi_tool(txn_id: str, months: int) -> dict:
+    """Converts a high-value transaction into EMI."""
+    try:
+        return requests.post(f"{API_BASE_URL}/transactions/convert_emi", json={"txn_id": txn_id, "tenure_months": months}).json()
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def report_dispute_tool(txn_id: str, reason: str) -> dict:
+    """Flags a transaction as fraudulent or incorrect."""
+    try:
+        return requests.post(f"{API_BASE_URL}/transactions/dispute", json={"txn_id": txn_id, "reason": reason}).json()
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def check_risk_status_tool(customer_id: str) -> dict:
+    """Checks if the user is in the collections/high-risk bucket."""
+    try:
+        return requests.get(f"{API_BASE_URL}/collections/check/{customer_id}").json()
+    except Exception as e:
+        return {"error": str(e)}
+
+# --- System Instruction  ---
 
 
 system_prompt = """
-You are the **OneCard GenAI Assistant**, a helpful and professional banking bot.
+You are the **OneCard AI Assistant**. You help users manage their credit cards.
 
-### YOUR CAPABILITIES:
-You have access to a real-time banking system. You can check balances, track cards, convert payments to EMI, and help open accounts.
+### OPERATIONAL GUIDELINES:
+1.  **Mandatory ID Check:** For ANY account-specific query (Balance, Bill, Block Card), you MUST ask for the `customer_id` first.
+2.  **Safety & Confirmations:**
+    * **Money Movement:** Before calling `make_payment_tool` or `convert_emi_tool`, explicitly confirm the amount and details with the user.
+    * **Blocking:** If a user says "Block card", ask if they want to 'Freeze' (temporary) or 'Block' (Permanent/Lost) before calling `block_freeze_card_tool`.
+3.  **Collections Empathy:** If `check_risk_status_tool` returns "CRITICAL" or mentions agents, adopt a supportive, calm tone. Do not threaten the user. Offer to take a payment.
+4.  **Formatting:** Use bullet points for lists (like transactions). Keep answers concise.
 
-### RULES OF ENGAGEMENT:
-1.  **Identity Verification:** * For almost all actions (checking bill, status, etc.), you MUST ask the user for their `customer_id` first if they haven't provided it. 
-    * The ONLY exception is `open_account`, which generates a new ID.
-2.  **Safety First:** * Before executing money actions (`make_payment` or `convert_to_emi`), summarize the details (Amount, Tenure) and ask for explicit confirmation (e.g., "Shall I proceed?").
-3.  **Data Presentation:** * When showing a bill or list of transactions, use clear bullet points.
-    * If a transaction was converted to EMI, mention the monthly installment amount clearly.
-4.  **Tone:**
-    * Be polite, empathetic, and concise. 
-    * If the user is stressed about `collections`, be calm and helpful.
-
-### EXAMPLES:
-* User: "I want to pay my bill."
-    Bot: "I can help with that. Please provide your Customer ID and the amount you wish to pay."
-* User: "Convert my last transaction to EMI."
-    Bot: "I'll need your Customer ID to check your recent transactions first."
+### TOOL USAGE:
+* Use `open_account_tool` only for new users.
+* Use `report_dispute_tool` if a user claims a charge is wrong.
 """
 
-# --- 3. Agent Initialization ---
+# --- Agent & Runner Setup ---
 
-root_agent = Agent(
-    name="OneCardBot",
-    # Note: Ensure this model name is valid in your ADK version.
-    # Fallback to "gemini-1.5-flash" if "lite" is unavailable.
-    model="gemini-2.5-flash-lite",
+agent = Agent(
+    name="OneCardGenAI",
+    model="gemini-2.5-flash-lite",  # Or 'gemini-1.5-pro' based on availability
     instruction=system_prompt,
     tools=[
-        open_account,
-        get_account_status,
-        check_card_delivery,
-        get_current_bill,
-        make_payment,
-        get_recent_transactions,
-        convert_to_emi,
-        check_collections_status
-    ],
-    output_key="final_response",
+        open_account_tool, get_account_details_tool, track_card_tool,
+        block_freeze_card_tool, get_bill_tool, make_payment_tool,
+        get_transactions_tool, convert_emi_tool, report_dispute_tool,
+        check_risk_status_tool
+    ]
 )
 
-# --- 4. API & Runner Setup (NEW) ---
-APP_NAME = "OneCardBotApp"
-
-# --- API Setup ---
-app = FastAPI(title="OneCard GenAI Agent API")
+app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins (for development)
-    allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods (POST, GET, OPTIONS, etc.)
-    allow_headers=["*"],  # Allows all headers
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
-
-# Initialize Session Service (Global persistence for the API)
 session_service = InMemorySessionService()
-
-# Define Request Model
 
 
 class ChatRequest(BaseModel):
@@ -232,86 +158,32 @@ class ChatRequest(BaseModel):
 
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
-    """
-    Async endpoint that handles session lookup and agent execution.
-    """
     user_id = request.user_id
-    query_text = request.query
-    session_id = None
 
-    try:
-        # --- 1. SESSION MANAGEMENT (Adapted from your logic) ---
+    # Session Management
+    sessions = await session_service.list_sessions(app_name="OneCardApp", user_id=user_id)
+    if sessions.sessions:
+        session_id = sessions.sessions[0].id
+    else:
+        sess = await session_service.create_session(app_name="OneCardApp", user_id=user_id)
+        session_id = sess.id
 
-        # Check for existing sessions for this user
-        existing_sessions = await session_service.list_sessions(
-            app_name=APP_NAME,
-            user_id=user_id,
-        )
+    runner = Runner(agent=agent, app_name="OneCardApp",
+                    session_service=session_service)
 
-        if existing_sessions and len(existing_sessions.sessions) > 0:
-            # Resume existing session
-            session_id = existing_sessions.sessions[0].id
-            print(f"DEBUG: Resumed session: {session_id}")
-        else:
-            # Create new session
-            new_session = await session_service.create_session(
-                app_name=APP_NAME,
-                user_id=user_id,
-            )
-            session_id = new_session.id
-            print(f"DEBUG: Created new session: {session_id}")
+    user_msg = types.Content(
+        role="user", parts=[types.Part(text=request.query)])
 
-        # --- 2. RUNNER INITIALIZATION ---
+    final_text = ""
+    async for event in runner.run_async(session_id=session_id, user_id=user_id, new_message=user_msg):
+        if event.content and event.content.parts:
+            for part in event.content.parts:
+                if part.text:
+                    final_text += part.text
 
-        # Initialize Runner with the service
-        runner = Runner(
-            agent=root_agent,
-            app_name=APP_NAME,
-            session_service=session_service,
-        )
-
-        # --- 3. CONSTRUCT CONTENT ---
-
-        user_prompt = f"""User Query: "{query_text}" """
-        content = types.Content(
-            role="user",
-            parts=[types.Part(text=user_prompt)],
-        )
-
-        # --- 4. EXECUTE AGENT ASYNC ---
-        print(f"Agent running for user: {user_id}...", file=sys.stderr)
-        final_text = ""
-
-        # This replaces your 'call_agent_async' wrapper.
-        # We await the runner.run() method directly.
-        async for event in runner.run_async(
-            session_id=session_id,
-            user_id=user_id,
-            new_message=content
-        ):
-            # We filter events to find the text response.
-            # Depending on your exact ADK version, 'is_final_response' might be a method or property.
-            # We check both the flag and the content role.
-
-            # Check for standard text response
-            if event.content and event.content.parts:
-                for part in event.content.parts:
-                    if part.text:
-                        # Append text chunks (some versions stream parts)
-                        final_text += part.text
-
-        # --- 5. RETURN RESPONSE ---
-
-        return {
-            "response": final_text.strip(),  # Extract text from response object
-            "session_id": session_id,
-            "user_id": user_id
-        }
-
-    except Exception as e:
-        print(f"Error processing request: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    return {"response": final_text, "session_id": session_id}
 
 if __name__ == "__main__":
-    # Ensure uvicorn runs on a port different from your tool APIs
-    uvicorn.run("backend:app", host="0.0.0.0", port=8000, reload=True)
+    import uvicorn
+    # backend runs on port 8000, mock_api runs on 5000
+    uvicorn.run(app, host="0.0.0.0", port=8000)

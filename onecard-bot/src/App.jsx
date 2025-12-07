@@ -35,8 +35,7 @@ import {
 
 // --- CONFIGURATION ---
 const API_URL = "http://localhost:8000/chat";
-const ELEVEN_LABS_API_KEY = "YOUR_KEY_HERE";
-const ELEVEN_LABS_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
+// Removed external API dependency for audio to ensure it works natively
 
 // --- MOCK DATA ---
 const FOLDERS = [
@@ -156,6 +155,7 @@ const MainLayout = ({ user, onLogout, theme, setTheme }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const messagesEndRef = useRef(null);
+  const recognitionRef = useRef(null); // Ref to store recognition instance
 
   // Auto-scroll
   useEffect(() => {
@@ -194,49 +194,60 @@ const MainLayout = ({ user, onLogout, theme, setTheme }) => {
     }
   };
 
-  const handleTextToSpeech = async (text) => {
-    if (!ELEVEN_LABS_API_KEY || ELEVEN_LABS_API_KEY === "YOUR_KEY_HERE") return;
-    try {
-      const cleanText = text.replace(/[*#_]/g, "");
-      const response = await axios.post(
-        `https://api.elevenlabs.io/v1/text-to-speech/${ELEVEN_LABS_VOICE_ID}`,
-        {
-          text: cleanText,
-          model_id: "eleven_monolingual_v1",
-          voice_settings: { stability: 0.5, similarity_boost: 0.5 },
-        },
-        {
-          headers: {
-            "xi-api-key": ELEVEN_LABS_API_KEY,
-            "Content-Type": "application/json",
-          },
-          responseType: "blob",
-        },
-      );
-      new Audio(window.URL.createObjectURL(new Blob([response.data]))).play();
-    } catch (e) {
-      console.error("TTS Error", e);
+  const handleTextToSpeech = (text) => {
+    // Switch to Browser Native TTS for reliability without API Key
+    const cleanText = text.replace(/[*#_]/g, "");
+
+    if ("speechSynthesis" in window) {
+      window.speechSynthesis.cancel(); // Stop any previous speech
+      const utterance = new SpeechSynthesisUtterance(cleanText);
+      utterance.rate = 1;
+      utterance.pitch = 1;
+      // Optional: attempt to pick a better voice if available, otherwise default
+      const voices = window.speechSynthesis.getVoices();
+      if (voices.length > 0) {
+        const preferred = voices.find((v) => v.lang.includes("en"));
+        if (preferred) utterance.voice = preferred;
+      }
+      window.speechSynthesis.speak(utterance);
+    } else {
+      console.warn("Text-to-speech not supported in this browser.");
     }
   };
 
   const toggleRecording = () => {
     if (isRecording) {
+      // Stop recording
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
       setIsRecording(false);
       return;
     }
+
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
+      recognitionRef.current = recognition; // Store in ref
       recognition.lang = "en-US";
       recognition.start();
       setIsRecording(true);
+
       recognition.onresult = (e) => {
-        setInput(e.results[0][0].transcript);
+        const transcript = e.results[0][0].transcript;
+        setInput((prev) => (prev ? prev + " " + transcript : transcript)); // Append to existing text
         setIsRecording(false);
       };
-      recognition.onerror = () => setIsRecording(false);
-      recognition.onend = () => setIsRecording(false);
+
+      recognition.onerror = (event) => {
+        console.error("Speech recognition error", event.error);
+        setIsRecording(false);
+      };
+
+      recognition.onend = () => {
+        setIsRecording(false);
+      };
     } else {
       alert("Speech recognition not supported in this browser.");
     }
@@ -476,7 +487,7 @@ const MainLayout = ({ user, onLogout, theme, setTheme }) => {
                   className={`flex w-full ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                 >
                   <div
-                    className={`flex gap-4 max-w-[80%] ${msg.role === "user" ? "flex-row-reverse" : "flex-row"}`}
+                    className={`flex gap-4 max-w-[85%] items-end ${msg.role === "user" ? "flex-row-reverse" : "flex-row"}`}
                   >
                     {/* Avatar */}
                     <div
@@ -485,44 +496,58 @@ const MainLayout = ({ user, onLogout, theme, setTheme }) => {
                       {msg.role === "user" ? "ME" : "AI"}
                     </div>
 
-                    {/* Bubble */}
+                    {/* Bubble & Actions */}
                     <div
-                      className={`p-5 rounded-2xl text-sm leading-relaxed shadow-sm relative ${
-                        msg.role === "user"
-                          ? "bg-orange-500 text-white rounded-tr-sm"
-                          : theme === "dark"
-                            ? "bg-[#1e1f2b] text-gray-200 border border-[#2b2c3d]"
-                            : "bg-white text-gray-700 border border-gray-100 rounded-tl-sm"
-                      }`}
+                      className={`flex flex-col gap-2 max-w-full ${msg.role === "user" ? "items-end" : "items-start"}`}
                     >
-                      {msg.role === "bot" ? (
-                        <ReactMarkdown
-                          components={{
-                            strong: ({ node, ...props }) => (
-                              <span
-                                className={`font-bold ${theme === "dark" ? "text-white" : "text-gray-900"}`}
-                                {...props}
-                              />
-                            ),
-                            ul: ({ node, ...props }) => (
-                              <ul
-                                className="list-disc ml-4 space-y-2 my-2"
-                                {...props}
-                              />
-                            ),
-                            li: ({ node, ...props }) => (
-                              <li className="" {...props} />
-                            ),
-                            p: ({ node, ...props }) => (
-                              <p className="mb-2 last:mb-0" {...props} />
-                            ),
-                          }}
-                        >
-                          {msg.content}
-                        </ReactMarkdown>
-                      ) : (
-                        msg.content
-                      )}
+                      <div
+                        className={`p-5 rounded-2xl text-sm leading-relaxed shadow-sm relative ${
+                          msg.role === "user"
+                            ? "bg-orange-500 text-white rounded-tr-sm"
+                            : theme === "dark"
+                              ? "bg-[#1e1f2b] text-gray-200 border border-[#2b2c3d]"
+                              : "bg-white text-gray-700 border border-gray-100 rounded-tl-sm"
+                        }`}
+                      >
+                        {msg.role === "bot" ? (
+                          <ReactMarkdown
+                            components={{
+                              strong: ({ node, ...props }) => (
+                                <span
+                                  className={`font-bold ${theme === "dark" ? "text-white" : "text-gray-900"}`}
+                                  {...props}
+                                />
+                              ),
+                              ul: ({ node, ...props }) => (
+                                <ul
+                                  className="list-disc ml-4 space-y-2 my-2"
+                                  {...props}
+                                />
+                              ),
+                              li: ({ node, ...props }) => (
+                                <li className="" {...props} />
+                              ),
+                              p: ({ node, ...props }) => (
+                                <p className="mb-2 last:mb-0" {...props} />
+                              ),
+                            }}
+                          >
+                            {msg.content}
+                          </ReactMarkdown>
+                        ) : (
+                          msg.content
+                        )}
+                      </div>
+
+                      {/* Read Aloud Button */}
+                      <button
+                        onClick={() => handleTextToSpeech(msg.content)}
+                        className={`p-1.5 rounded-full transition-colors flex items-center gap-1.5 text-[10px] font-medium opacity-60 hover:opacity-100 ${theme === "dark" ? "hover:bg-white/10 text-gray-400" : "hover:bg-black/5 text-gray-500"}`}
+                        title="Read aloud"
+                      >
+                        <Volume2 size={14} />
+                        <span>Read</span>
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -563,7 +588,8 @@ const MainLayout = ({ user, onLogout, theme, setTheme }) => {
               <div className="flex items-center gap-2 pr-2">
                 <button
                   onClick={toggleRecording}
-                  className={`p-2 rounded-xl transition ${isRecording ? "text-red-500 bg-red-500/10" : "text-gray-400 hover:bg-gray-100 dark:hover:bg-[#2b2c3d]"}`}
+                  className={`p-2 rounded-xl transition ${isRecording ? "text-red-500 bg-red-500/10 animate-pulse" : "text-gray-400 hover:bg-gray-100 dark:hover:bg-[#2b2c3d]"}`}
+                  title="Hold to record"
                 >
                   {isRecording ? <StopCircle size={20} /> : <Mic size={20} />}
                 </button>
