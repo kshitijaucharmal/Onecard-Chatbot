@@ -1,18 +1,23 @@
 import random
 import uuid
 from datetime import datetime, timedelta
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey, Boolean, Date
+from sqlalchemy import create_engine, Column, String, Float, DateTime, ForeignKey, Date, Boolean
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from faker import Faker
 
-# --- 1. Database Configuration ---
-# REPLACE with your actual Postgres URL: postgresql://user:password@localhost/dbname
-DATABASE_URL = "postgresql://postgres:password@localhost/onecard_db"
+# --- 1. Database Configuration (SQLite) ---
+# This will create a file named 'onecard.db' in the same folder
+DATABASE_URL = "sqlite:///./onecard.db"
 
-engine = create_engine(DATABASE_URL)
+# connect_args={"check_same_thread": False} is required for SQLite + FastAPI
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"check_same_thread": False}
+)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
-fake = Faker('en_IN')  # Indian context for names/addresses
+fake = Faker('en_IN')
 
 # --- 2. Define Tables (Schema) ---
 
@@ -23,13 +28,12 @@ class Customer(Base):
     id = Column(String, primary_key=True, index=True)
     name = Column(String, nullable=False)
     phone = Column(String, unique=True, index=True)
-    status = Column(String, default="verified")  # verified, pending, blocked
+    status = Column(String, default="verified")
     credit_limit = Column(Float, default=100000.0)
     balance_due = Column(Float, default=0.0)
     min_due = Column(Float, default=0.0)
     due_date = Column(Date, nullable=True)
 
-    # Relationships
     transactions = relationship("Transaction", back_populates="customer")
     cards = relationship("Card", back_populates="customer")
 
@@ -39,9 +43,8 @@ class Card(Base):
 
     id = Column(String, primary_key=True, index=True)
     customer_id = Column(String, ForeignKey("customers.id"))
-    card_number = Column(String, unique=True)  # Masked in real life
-    status = Column(String, default="active")  # active, blocked, in_transit
-    # delivered, out_for_delivery
+    card_number = Column(String, unique=True)
+    status = Column(String, default="active")
     delivery_status = Column(String, default="delivered")
     tracking_id = Column(String, nullable=True)
 
@@ -55,7 +58,7 @@ class Transaction(Base):
     customer_id = Column(String, ForeignKey("customers.id"))
     merchant = Column(String)
     amount = Column(Float)
-    category = Column(String)  # Food, Travel, Shopping, Repayment
+    category = Column(String)
     date = Column(DateTime, default=datetime.utcnow)
 
     customer = relationship("Customer", back_populates="transactions")
@@ -64,21 +67,19 @@ class Transaction(Base):
 
 
 def seed_database():
+    # Create tables
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
 
-    # Check if data exists
     if db.query(Customer).count() > 0:
         print("Database already contains data. Skipping seed.")
         return
 
-    print("Seeding database with 100 customers and transactions...")
+    print("Seeding SQLite database with 100 customers...")
 
     for _ in range(100):
-        # Create Customer
         cust_id = f"cust_{uuid.uuid4().hex[:8]}"
-        is_overdue = random.choice(
-            [True, False, False])  # 33% chance of overdue
+        is_overdue = random.choice([True, False, False])
 
         balance = round(random.uniform(1000, 50000), 2) if is_overdue else 0
         due_date = datetime.now() + timedelta(days=random.randint(-5, 20))
@@ -95,7 +96,6 @@ def seed_database():
         )
         db.add(customer)
 
-        # Create Card
         card = Card(
             id=f"card_{uuid.uuid4().hex[:8]}",
             customer_id=cust_id,
@@ -107,7 +107,6 @@ def seed_database():
         )
         db.add(card)
 
-        # Create 5-10 Transactions per customer
         for _ in range(random.randint(5, 10)):
             txn = Transaction(
                 id=f"txn_{uuid.uuid4().hex[:8]}",
@@ -121,7 +120,7 @@ def seed_database():
             db.add(txn)
 
     db.commit()
-    print("Seeding Complete!")
+    print("Seeding Complete! File 'onecard.db' created.")
     db.close()
 
 
