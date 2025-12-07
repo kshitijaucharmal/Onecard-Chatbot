@@ -49,11 +49,6 @@ class AccountOpenRequest(BaseModel):
     phone: str
     name: str
 
-
-class EMIRequest(BaseModel):
-    txn_id: str
-    tenure_months: int = Field(..., ge=3, le=24)
-
 # --- Endpoints ---
 
 
@@ -184,6 +179,47 @@ def get_overdue_status(customer_id: str, db: Session = Depends(get_db)):
         "total_outstanding": cust.balance_due,
         "risk_category": "High" if is_critical else "Low",
         "action_required": "Immediate Payment" if is_critical else "None"
+    }
+
+# --- Add this Pydantic Model near the top with others ---
+
+
+class EMIRequest(BaseModel):
+    txn_id: str
+    tenure_months: int = Field(..., ge=3, le=24,
+                               description="Tenure must be 3-24 months")
+
+# --- Add this Endpoint near the bottom (before 'if __name__') ---
+
+
+@app.post("/emi/convert", tags=["EMI"])
+def convert_to_emi(req: EMIRequest, db: Session = Depends(get_db)):
+    # 1. Find the transaction
+    txn = db.query(Transaction).filter(Transaction.id == req.txn_id).first()
+    if not txn:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+
+    # 2. Mock Logic: Prevent converting small amounts
+    if txn.amount < 2500:
+        raise HTTPException(
+            status_code=400, detail="Transaction too small for EMI (Min 2500).")
+
+    # 3. Calculate EMI (Mock 14% Interest)
+    interest_rate = 0.14
+    total_repayment = txn.amount * (1 + interest_rate)
+    monthly_installment = total_repayment / req.tenure_months
+
+    # 4. Update Transaction Category to indicate change
+    txn.category = f"Converted to EMI ({req.tenure_months}m)"
+    db.commit()
+
+    return {
+        "status": "success",
+        "emi_id": f"EMI_{uuid.uuid4().hex[:6]}",
+        "original_txn": txn.id,
+        "monthly_installment": round(monthly_installment, 2),
+        "total_repayment": round(total_repayment, 2),
+        "message": f"Transaction converted. Your monthly EMI is {round(monthly_installment, 2)}."
     }
 
 
