@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  mock-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.mock
+    container_name: onecard-mock-api
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - DATABASE_URL=sqlite:///./data/onecard.db
+    networks:
+      - onecard-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/docs"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: onecard-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - API_BASE_URL=http://mock-api:5000
+    depends_on:
+      mock-api:
+        condition: service_healthy
+    networks:
+      - onecard-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  frontend:
+    build:
+      context: ./onecard-bot
+      dockerfile: Dockerfile
+    container_name: onecard-frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./onecard-bot/src:/app/src
+      - ./onecard-bot/public:/app/public
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - onecard-network
+
+networks:
+  onecard-network:
+    driver: bridge
+
+volumes:
+  data:
+
