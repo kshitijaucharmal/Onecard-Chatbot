@@ -4,11 +4,6 @@ An AI-powered credit card assistant with a Python backend and React.js frontend,
 
 ## 🖼️ Screenshots
 
-> **Note:** To display the screenshots, please add the following image files to the `docs/images/` directory:
-> - `login-screen.png` - Login interface
-> - `chat-empty-state.png` - Main chat interface (empty state)
-> - `chat-active.png` - Active chat conversation
-
 ### Login Screen
 ![Login Screen](docs/images/login-screen.png)
 *Secure login interface with user authentication - Login with any customer ID (e.g., `cust_1015a13f`) and password `1234`*
