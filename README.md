@@ -84,7 +84,7 @@ make start-all-in-one
 ## 🏗️ Architecture
 
 ```
-prismpay/
+PrismPay/
 ├── backend.py              # FastAPI + Google ADK agent
 ├── mock_apis.py            # Mock banking APIs
 ├── setup_database.py       # SQLite initialization
@@ -256,13 +256,3 @@ This project is for demonstration and educational purposes.
   <sub>Built with ❤️ using Google ADK, FastAPI, and React</sub><br/>
   <sub>See your finances in full color with PrismPay 🌈</sub>
 </p>
-```
-
-**Key improvements:**
-- Added badges for quick tech stack visibility
-- Condensed structure with collapsible sections for running options
-- Table-based feature showcase for scanability
-- Cleaner visual hierarchy with emojis and sections
-- Tagline reinforces the "PrismPay" brand identity
-- Screenshots in a 3-column table for better layout
-- Troubleshooting as a quick-reference table

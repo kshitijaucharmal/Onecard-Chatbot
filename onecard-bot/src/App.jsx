@@ -110,7 +110,7 @@ const LoginScreen = ({ onLogin }) => {
           <div className="w-16 h-16 bg-gradient-to-br from-orange-400 to-pink-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-orange-500/20">
             <CreditCard className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-3xl font-bold tracking-tight">OneCard AI</h1>
+          <h1 className="text-3xl font-bold tracking-tight">PrismPay AI</h1>
           <p className="text-gray-400 mt-2 text-sm">MindMerge Theme Edition</p>
         </div>
         <form onSubmit={handleLogin} className="space-y-5 relative z-10">
@@ -186,7 +186,7 @@ const MainLayout = ({ user, onLogout, theme, setTheme }) => {
         {
           role: "bot",
           content:
-            "⚠️ **Connection Error**: I couldn't reach the OneCard server. Is it running on port 8000?",
+            "⚠️ **Connection Error**: I couldn't reach the PrismPay server. Is it running on port 8000?",
         },
       ]);
     } finally {
@@ -269,7 +269,7 @@ const MainLayout = ({ user, onLogout, theme, setTheme }) => {
             <Sparkles size={20} className="text-white" />
           </div>
           <span className="font-bold text-xl text-white tracking-tight">
-            OneCard AI
+            PrismPay AI
           </span>
         </div>
 
@@ -436,7 +436,7 @@ const MainLayout = ({ user, onLogout, theme, setTheme }) => {
                 <p
                   className={`text-lg mb-10 max-w-lg mx-auto leading-relaxed ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}
                 >
-                  I can help you analyze your OneCard spending, manage your
+                  I can help you analyze your PrismPay spending, manage your
                   limits, or clarify transaction details.
                 </p>
 
@@ -604,7 +604,7 @@ const MainLayout = ({ user, onLogout, theme, setTheme }) => {
             </div>
             <div className="text-center mt-3">
               <p className="text-[10px] text-gray-400">
-                Free Research Preview. OneCard AI may produce inaccurate
+                Free Research Preview. PrismPay AI may produce inaccurate
                 information.
               </p>
             </div>
